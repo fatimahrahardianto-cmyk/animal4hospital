@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Anomaly Hospital — 3D Singleplayer & Co-op Horror Game</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Three.js 3D WebGL Engine -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <!-- 3D First-Person Hospital Canvas -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Visual Filters & Hazard Warnings -->
+  <div id="uv-overlay"></div>
+  <div id="damage-vignette"></div>
+  <div id="dont-look-up-warning">Don't look up</div>
+  <div id="big-countdown-banner"></div>
+  <div id="crosshair"></div>
+
+  <!-- 3D Floating Proximity Signs & Co-op Nicknames -->
+  <div id="world-labels-container"></div>
+
+  <!-- Shift 12 Grand Disco Celebration Controls -->
+  <div id="disco-banner" class="hud-interactive">
+    <span>🪩 SHIFT 12 COMPLETED! HOSPITAL DISCO PARTY!</span>
+    <button class="primary-btn btn-green" onclick="window.game.isDancingPlayer = !window.game.isDancingPlayer">
+      💃 Dance Toggle
+    </button>
+    <button class="primary-btn btn-red" onclick="window.game.exitToMainMenu()">
+      👋 Goodbye (Main Menu)
+    </button>
+  </div>
+
+  <!-- ========================================================================
+       IN-GAME HUD (Desktop, Laptop, & iPad / Mobile Touch Screen)
+       ======================================================================== -->
+  <div id="hud">
+    <!-- Top Status Bar -->
+    <div id="hud-top-bar">
+      <div class="hud-pill">
+        <span id="shift-badge">SHIFT 1 / 12</span>
+        <span id="difficulty-badge">Easy (Tutorial)</span>
+        <div id="strikes-container" title="3 Chances per shift: Killing 3 normal patients gets you fired!">
+          <span>Patient Safety Chances:</span>
+          <span id="strikes-icons"></span>
+        </div>
+      </div>
+
+      <div id="top-right-buttons" class="hud-interactive">
+        <button id="btn-toggle-move-mode" class="hud-btn">🕹️ Move: Joystick</button>
+        <button id="btn-hud-guide" class="hud-btn">📖 Guide</button>
+        <button id="btn-pause" class="hud-btn">⏸️ Pause [P]</button>
+        <button id="btn-exit-menu" class="hud-btn btn-danger">🚪 Exit to Menu</button>
+      </div>
+    </div>
+
+    <!-- Top-Center 3D Directional Objective Arrow -->
+    <div id="objective-compass">
+      <span id="compass-arrow">⬆</span>
+      <span id="compass-target-name">Registration Desk</span>
+    </div>
+
+    <!-- Middle-Left Duty & Active Patients Tracker -->
+    <div id="duty-panel" class="hud-interactive">
+      <h3>
+        <span>📋 Current Shift Duty</span>
+        <span style="font-size:0.7rem;color:#94a3b8;">[E] / Touch Sign</span>
+      </h3>
+      <div id="current-duty-text">
+        Welcome to Anomaly Hospital! Walk to the Registration Camera to snap a photo of the patient.
+      </div>
+      <div id="active-patients-list"></div>
+    </div>
+
+    <!-- Touch Screen / iPad Movement & Look Zones -->
+    <div id="touch-controls">
+      <div id="touch-move-zone">
+        <!-- Mode A: Virtual Joystick -->
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+        <!-- Mode B: Directional Toggle Buttons (Front / Back / Left / Right) -->
+        <div id="dpad-container">
+          <div id="dpad-up" class="dpad-btn dpad-up">▲</div>
+          <div id="dpad-down" class="dpad-btn dpad-down">▼</div>
+          <div id="dpad-left" class="dpad-btn dpad-left">◀</div>
+          <div id="dpad-right" class="dpad-btn dpad-right">▶</div>
+        </div>
+      </div>
+
+      <!-- Right Side Touch Look Area -->
+      <div id="touch-look-zone"></div>
+      <div id="touch-look-hint">👆 Drag finger here or Mouse to look Up / Down / Left / Right</div>
+    </div>
+
+    <!-- Bottom-Left Sanity (Heart 1 & Heart 2), Cash, & Cooldowns -->
+    <div id="sanity-panel" class="hud-interactive">
+      <div class="hearts-wrapper">
+        <div class="hearts-row">
+          <div id="heart-1-badge" class="heart-badge active-heart" title="Heart 1 (Cannot be refilled once empty)">100%</div>
+          <div id="heart-2-badge" class="heart-badge" title="Heart 2 (Backup Life in Solo)">100%</div>
+        </div>
+        <span style="font-size:0.7rem;font-weight:800;color:#cbd5e1;">SANITY / HEART</span>
+      </div>
+
+      <div class="sanity-details">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:800;font-size:0.85rem;">Sanity Meter</span>
+          <span id="cash-display" style="color:#4ade80;font-weight:900;font-size:0.95rem;">$50</span>
+        </div>
+        <div class="sanity-bar-outer">
+          <div id="sanity-bar-fill"></div>
+        </div>
+        <div class="cooldowns-row">
+          <span id="milk-cd-tag" class="cd-tag ready">🥛 Milk: Ready</span>
+          <span id="taser-cd-tag" class="cd-tag ready">⚡ Taser: Ready</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center-Bottom Context Prompt -->
+    <div id="context-prompt">[E] Interact</div>
+
+    <!-- Bottom-Center Held Item & Unified Action Buttons -->
+    <div id="inventory-bar" class="hud-interactive">
+      <div id="held-item-box">
+        <div id="held-item-icon">✋</div>
+        <div class="held-item-meta">
+          <span class="held-item-label">Held Item</span>
+          <span id="held-item-name">Empty Hands</span>
+        </div>
+      </div>
+
+      <div id="action-buttons-cluster">
+        <button id="act-interact" class="action-btn btn-interact" title="Interact / Use / Give Medicine / Print Card">
+          <span>🖐️ Interact</span>
+          <span class="shortcut">[E]</span>
+        </button>
+        <button id="act-taser" class="action-btn btn-taser" title="Separate Taser / Gun / Fire Extinguisher Button">
+          <span>⚡ Taser/Gun</span>
+          <span class="shortcut">[T]</span>
+        </button>
+        <button id="act-camera" class="action-btn" title="Take Polaroid Snapshot">
+          <span>📸 Photo</span>
+          <span class="shortcut">[C]</span>
+        </button>
+        <button id="act-uv" class="action-btn" title="Toggle Liz's UV Camera Light">
+          <span>🔮 UV Light</span>
+          <span class="shortcut">[U]</span>
+        </button>
+        <button id="act-flashlight" class="action-btn active-toggle" title="Toggle Bright Flashlight">
+          <span>🔦 Light</span>
+          <span class="shortcut">[F]</span>
+        </button>
+        <button id="act-run" class="action-btn" title="Speed Up Character (+1.5% / Sprint)">
+          <span>🏃 Run +1.5%</span>
+          <span class="shortcut">[Shift]</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MAIN MENU MODAL (Matches Screenshots 2 & 3 Character Skin Shop!)
+       ======================================================================== -->
+  <div id="main-menu-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="menu-brand-row">
+        <div class="hospital-cross-badge">✚</div>
+        <div>
+          <h1 class="menu-title">ANOMALY HOSPITAL</h1>
+          <p class="menu-subtitle">Night Shift Veterinary Ward • Inspired by Roblox Animal Hospital</p>
+        </div>
+      </div>
+
+      <!-- Top Currency Bar: Hospital Coins, Premium Anomaly Coins, & 20 -> 1 Exchange -->
+      <div class="currency-bar">
+        <div class="coin-pill hospital-coin">
+          <span>🪙 Hospital Coins:</span>
+          <span id="hospital-coins-count">17</span>
+        </div>
+        <div class="coin-pill premium-coin">
+          <span>💎 Premium Anomaly Coins:</span>
+          <span id="premium-coins-count">0</span>
+        </div>
+        <button id="btn-exchange-coins" class="coin-exchange-btn">
+          🔄 20 🪙 → 1 💎 Premium Coin
+        </button>
+      </div>
+
+      <div class="menu-grid">
+        <!-- Left Column: 1. Doctor Identity & Character Skin Shop -->
+        <div class="menu-section">
+          <h3>1. DOCTOR IDENTITY &amp; CHARACTER SKIN SHOP</h3>
+          <label style="font-size:0.84rem;color:#cbd5e1;display:block;margin-bottom:6px;">
+            Your Nickname (Shown above your head in Co-op):
+          </label>
+          <input id="player-nickname-input" class="input-field" type="text" value="Dr. Paws" maxlength="20" />
+
+          <label style="font-size:0.84rem;color:#cbd5e1;display:block;margin-bottom:8px;">
+            Click a Character Skin to Equip or Buy with Coins:
+          </label>
+          <div id="char-select-list"></div>
+        </div>
+
+        <!-- Right Column: 2. Game Mode, Co-op Lobby Link, & Uniform Colors -->
+        <div class="menu-section">
+          <h3>2. GAME MODE, CO-OP INVITE &amp; UNIFORM COLORS</h3>
+          <label style="font-size:0.84rem;color:#cbd5e1;display:block;margin-bottom:6px;">
+            Select Game Mode:
+          </label>
+          <select id="game-mode-select" class="input-field">
+            <option value="solo">Single Player (2 Sanity Hearts — Backup Life)</option>
+            <option value="coop">Co-op Multiplayer (1 Sanity Heart + Friend Revive &amp; AI Partner)</option>
+          </select>
+
+          <label style="font-size:0.84rem;color:#cbd5e1;display:block;margin-bottom:6px;">
+            Co-op Room Code &amp; Shareable Friend Invite Link:
+          </label>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <input id="coop-room-code" class="input-field" style="margin:0;" type="text" value="HOSP-101" />
+            <button id="btn-copy-invite" class="hud-btn" style="white-space:nowrap;">🔗 Copy Invite Link</button>
+          </div>
+
+          <label style="font-size:0.84rem;color:#cbd5e1;display:block;margin-bottom:6px;">
+            Uniform Coat Color Skins (Beginner Blue is Free):
+          </label>
+          <div id="skin-select-list" class="skin-swatches"></div>
+
+          <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
+            <button id="btn-start-game" class="primary-btn btn-green" style="width:100%;font-size:1.08rem;">
+              ▶ Start Night Shift (Shift 1)
+            </button>
+            <button id="btn-open-guide" class="primary-btn" style="width:100%;">
+              📖 Doctor's Field Guide &amp; Anomaly Manual
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       CCTV & REGISTRATION COMPUTER TERMINAL MODAL
+       ======================================================================== -->
+  <div id="cctv-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width:820px;">
+      <h2 style="margin-top:0;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;">
+        <span>🖥️ REGISTRATION CENTRE — CCTV &amp; ID TAG TERMINAL</span>
+        <button id="btn-close-cctv" class="hud-btn">✖ Close</button>
+      </h2>
+
+      <div class="terminal-grid">
+        <div>
+          <div class="cctv-screen-box">
+            <canvas id="cctv-canvas" width="320" height="260"></canvas>
+          </div>
+          <p style="font-size:0.8rem;color:#94a3b8;margin:8px 0 0 0;">
+            💡 <strong>Tip:</strong> 15% of anomalies only reveal distortions on CCTV, 10% in Polaroid photos (subtle ear changes or red/wide eyes), and 5% under Liz's UV Light!
+          </p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;justify-content:space-between;">
+          <div id="clipboard-content" class="clipboard-paper"></div>
+
+          <div class="id-card-preview">
+            <div class="id-card-header">PATIENT</div>
+            <div class="id-card-body">ID TAG PRINTER READY</div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
+            <button id="btn-confirm-print-tag" class="primary-btn btn-green" style="width:100%;">
+              🖨️ Confirm &amp; Print Tag (Ejects 3D Card on Printer)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       POLAROID CAMERA SNAPSHOT INSPECTOR MODAL
+       ======================================================================== -->
+  <div id="polaroid-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width:440px;text-align:center;">
+      <h3 style="margin-top:0;color:#38bdf8;">📸 g-cam Polaroid Printout</h3>
+      <div class="polaroid-frame">
+        <canvas id="polaroid-canvas" width="300" height="300"></canvas>
+        <div id="polaroid-caption" class="polaroid-caption">Patient Snapshot</div>
+      </div>
+      <p style="font-size:0.8rem;color:#cbd5e1;margin:12px 0;">
+        Inspect the eyes and ear shape carefully! If you spot red/wide eyes or mismatched ears compared to the patient in front of you, reject them with the Red Shutters button or use your Taser!
+      </p>
+      <button id="btn-close-polaroid" class="primary-btn" style="width:100%;">Done Inspecting Photo</button>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       SUPPLIES SHOP MODAL
+       ======================================================================== -->
+  <div id="shop-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width:560px;">
+      <h2 style="margin-top:0;color:#38bdf8;display:flex;justify-content:space-between;">
+        <span>🛒 Hospital Supplies Shop</span>
+        <button id="btn-close-shop" class="hud-btn">✖ Close</button>
+      </h2>
+      <div id="shop-items-list"></div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       STORY & NPC INTERACTION MODAL (Barney, Rathew, Liz, Police, Game Over)
+       ======================================================================== -->
+  <div id="story-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width:560px;">
+      <h2 id="story-modal-title" style="margin-top:0;color:#38bdf8;">Hospital Event</h2>
+      <p id="story-modal-body" style="line-height:1.55;font-size:0.98rem;color:#e2e8f0;white-space:pre-line;"></p>
+      <div id="story-modal-buttons" style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px;"></div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       END OF SHIFT SUMMARY & MVP MODAL
+       ======================================================================== -->
+  <div id="summary-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width:620px;text-align:center;">
+      <h2 style="margin-top:0;color:#4ade80;">✅ SHIFT COMPLETED!</h2>
+      <p style="color:#94a3b8;font-size:0.9rem;">
+        Shift Performance Report (Patient &amp; Anomaly counts revealed only after shift ends):
+      </p>
+      <div id="summary-content" style="text-align:left;"></div>
+      <button id="btn-next-shift" class="primary-btn btn-green" style="width:100%;margin-top:12px;">
+        Proceed to Next Shift →
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       PAUSE MODAL (Stops all players, anomalies, and emergency timers)
+       ======================================================================== -->
+  <div id="pause-modal" class="modal-backdrop">
+    <div class="modal-card" style="max-width:420px;text-align:center;">
+      <h2 style="margin-top:0;color:#38bdf8;">⏸️ GAME PAUSED</h2>
+      <p style="color:#cbd5e1;font-size:0.9rem;">
+        All hospital activities, anomalies, and emergency room timers are frozen.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;">
+        <button id="btn-resume" class="primary-btn btn-green">▶ Resume Shift</button>
+        <button id="btn-pause-exit" class="primary-btn btn-red">🚪 Exit to Main Menu (Resets to Shift 1)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       COMPREHENSIVE PLAYER GUIDE MODAL
+       ======================================================================== -->
+  <div id="guide-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0;color:#38bdf8;">📖 Anomaly Hospital — Doctor's Survival &amp; Field Guide</h2>
+        <button id="btn-close-guide" class="hud-btn">✖ Close Guide</button>
+      </div>
+
+      <div class="menu-grid" style="margin-top:16px;">
+        <div class="menu-section">
+          <h3>1. Check-In, 3D ID Card, &amp; Treatment Flow</h3>
+          <ul style="font-size:0.84rem;line-height:1.5;padding-left:18px;color:#cbd5e1;">
+            <li><strong>Step 1 (Snapshot &amp; CCTV):</strong> Take a Polaroid photo with the <strong>g-cam [C]</strong> and check the <strong>CCTV PC [E]</strong>.</li>
+            <li><strong>Step 2 (Decline or Print):</strong> If it's an anomaly, press the <strong>Red Shutters Button</strong> to decline them, or shoot/tase them with <strong>[T]</strong>. If normal, click <strong>Confirm &amp; Print Tag</strong> on the PC.</li>
+            <li><strong>Step 3 (3D ID Card):</strong> Walk to the <strong>Printer [E]</strong> to pick up the 3D rectangular blue/gray <strong>PATIENT ID Card</strong>, then press <strong>[E]</strong> on a Ward Bed (Rooms 101–108) to assign the patient.</li>
+            <li><strong>Step 4 (10 Hallway Medicines):</strong> Collect the patient's 1–3 required items from the Hallway Shelves (<em>Pill Bottle, Herbs, Cough Syrup, Maple Syrup, Medkit, Thermometer, IV Drops, Eye Drops, Ointment, Bandages</em>) and press <strong>[E]</strong> at their bed. After a 5s recovery timer, normal patients stand up, walk out of the room, and disappear cleanly; disguised anomalies turn <strong>glowing RED</strong>, say <em>"I'm hungry!"</em>, and hunt you!</li>
+          </ul>
+        </div>
+
+        <div class="menu-section">
+          <h3>2. Anomaly Probabilities &amp; Special Entities</h3>
+          <ul style="font-size:0.84rem;line-height:1.5;padding-left:18px;color:#cbd5e1;">
+            <li><strong>65% Normal Patients:</strong> Safe pastel palette (never red or black, except Rathew the black rat).</li>
+            <li><strong>15% CCTV Anomalies:</strong> Only visible on the CCTV monitor.</li>
+            <li><strong>10% Camera Photo Anomalies:</strong> 5% have subtle ear/shape differences in the Polaroid; 5% show horrific wide red eyes that drain sanity.</li>
+            <li><strong>5% UV Anomalies:</strong> Only visible with <strong>Liz's UV Camera [U]</strong> right in front of their face.</li>
+            <li><strong>"Don't Look Up" Ceiling Monster:</strong> Keep your camera pointed straight/down or calm it with <strong>Eye Drops</strong>.</li>
+            <li><strong>Under-Bed Monster:</strong> Avoid red bed zones, struggle with <strong>[E]</strong>, or feed it <strong>Maple Syrup, Organ, or Transplant</strong>.</li>
+            <li><strong>Slimebert (Shift 10+):</strong> Immune to guns/tasers! Stun with <strong>Fire Extinguisher</strong> or melt with <strong>Cough Syrup</strong>.</li>
+            <li><strong>Death Ritual (Shift 5 &amp; 11):</strong> Extinguish all candles in 35s using <strong>Eye Drops</strong> (0 sanity loss), <strong>[E]</strong>, or <strong>Taser</strong> the patient!</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Scripts -->
+  <script src="audio.js"></script>
+  <script src="data.js"></script>
+  <script src="models.js"></script>
+  <script src="world.js"></script>
+  <script src="multiplayer.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
